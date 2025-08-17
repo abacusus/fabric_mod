@@ -2,6 +2,7 @@ package com.example;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.minecraft.block.Blocks;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardCriterion;
@@ -11,10 +12,17 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 
+import java.util.HashMap;
+import java.util.Map; // 
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 
 public class PrisonMod implements ModInitializer {
+
+    // Store prison locations for victims
+    private final Map<UUID, BlockPos> pendingPrisons = new HashMap<>();
+
     @Override
     public void onInitialize() {
         // Listen for player death caused by another player
@@ -33,46 +41,62 @@ public class PrisonMod implements ModInitializer {
                 BlockPos prisonPos = deathPos.add(dx, 64, dz); // y=64 baseline
 
                 // Build prison
-                buildPrison(world, prisonPos);
+                buildPrison((ServerWorld) world, prisonPos);
 
-                // Teleport victim
-                victim.teleport(
-    (ServerWorld) world,
-    prisonPos.getX() + 0.5,  // Adding 0.5 centers player in block
-    prisonPos.getY() + 1,
-    prisonPos.getZ() + 0.5,
-    Set.of(),  // Empty set of PositionFlags
-    victim.getYaw(),
-    victim.getPitch(),
-    false  // Whether to disable teleportation restrictions
-);
+                // Save victim’s UUID + prison position for respawn
+                pendingPrisons.put(victim.getUuid(), prisonPos);
 
-                // Update scoreboard
-                // Update scoreboard
-Scoreboard scoreboard = world.getScoreboard();
-ScoreboardObjective obj = scoreboard.getNullableObjective("prisonedPlayers");
-if (obj == null) {
-    obj = scoreboard.addObjective(
-        "prisonedPlayers",                   // String name
-        ScoreboardCriterion.DUMMY,           // ScoreboardCriterion criterion
-        Text.literal("Prisoned Players"),    // Text displayName
-        ScoreboardCriterion.RenderType.INTEGER, // RenderType renderType
-        false,                               // boolean displayAutoUpdate
-        null                                 // NumberFormat numberFormat (nullable)
-    );
-}
+                // Messages
+                killer.sendMessage(Text.literal("You trapped " + victim.getName().getString()), false);
+                victim.sendMessage(Text.literal("You will be imprisoned after respawn..."), false);
 
+                // ✅ scoreboard update INSIDE same lambda where victim exists
+                Scoreboard scoreboard = world.getScoreboard();
+                ScoreboardObjective obj = scoreboard.getNullableObjective("prisonedPlayers");
+                if (obj == null) {
+                    obj = scoreboard.addObjective(
+                            "prisonedPlayers",
+                            ScoreboardCriterion.DUMMY,
+                            Text.literal("Prisoned Players"),
+                            ScoreboardCriterion.RenderType.INTEGER,
+                            false,
+                            null
+                    );
+                }
                 scoreboard.getOrCreateScore(victim, obj).setScore(1);
 
                 // Broadcast
-world.getServer().getPlayerManager().broadcast(Text.literal(
-    victim.getName().getString() + " is trapped at " + prisonPos.getX() + " " + prisonPos.getY() + " " + prisonPos.getZ()
-), false);
+                world.getServer().getPlayerManager().broadcast(
+                        Text.literal(victim.getName().getString() + " is trapped at " +
+                                prisonPos.getX() + " " +
+                                prisonPos.getY() + " " +
+                                prisonPos.getZ()),
+                        false
+                );
+            }
+        });
+
+        // After respawn (⚠ must be registered OUTSIDE combat event)
+        ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+            BlockPos prisonPos = pendingPrisons.remove(newPlayer.getUuid());
+            if (prisonPos != null) {
+                newPlayer.teleport(
+    (ServerWorld) newPlayer.getWorld(),
+    prisonPos.getX() + 0.5,
+    prisonPos.getY() + 1,
+    prisonPos.getZ() + 0.5,
+    Set.of(),                
+    newPlayer.getYaw(),
+    newPlayer.getPitch(),
+    false                    
+);
+
+                newPlayer.sendMessage(Text.literal("You have been imprisoned!"), false);
             }
         });
     }
 
-    private void buildPrison(net.minecraft.server.world.ServerWorld world, BlockPos pos) {
+    private void buildPrison(ServerWorld world, BlockPos pos) {
         for (int x = -2; x <= 2; x++) {
             for (int y = 0; y <= 4; y++) {
                 for (int z = -2; z <= 2; z++) {
