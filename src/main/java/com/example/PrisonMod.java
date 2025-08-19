@@ -4,6 +4,8 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.minecraft.block.Blocks;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardCriterion;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -20,7 +22,7 @@ import java.util.UUID;
 
 public class PrisonMod implements ModInitializer {
 
-    // Store prison locations for victims
+    // Store prison locations
     private final Map<UUID, BlockPos> pendingPrisons = new HashMap<>();
 
     @Override
@@ -90,6 +92,16 @@ public class PrisonMod implements ModInitializer {
     newPlayer.getPitch(),
     false                    
 );
+
+newPlayer.addStatusEffect(new StatusEffectInstance(
+        StatusEffects.MINING_FATIGUE, // Effect type
+        1_728_000,                    // Duration in ticks (24 hours)
+        4,                            // Amplifier (level V, since 0=I)
+        false,                        // Ambient (doesn’t show special particles)
+        false,                        // Show particles (disabled)
+        true                          // Show icon in inventory
+));
+
 
                 newPlayer.sendMessage(Text.literal("You have been imprisoned!"), false);
             }
